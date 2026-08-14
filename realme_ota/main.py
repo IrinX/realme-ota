@@ -96,10 +96,12 @@ def main():
     # ---- Validate required positional args (when not using --list-models) ----
     missing = []
     if not args.product_model: missing.append('product_model')
-    if args.os_version is None: missing.append('os_version')
     if not args.scan and not args.ota_version: missing.append('ota_version')
     if missing:
         parser.error(f"the following arguments are required: {', '.join(missing)}")
+    # In scan mode, default os_version to 16 (latest ColorOS) if not provided
+    if args.scan and args.os_version is None:
+        args.os_version = 16
 
     logger = Logger(
         level = 0 if args.silent else args.verbosity
