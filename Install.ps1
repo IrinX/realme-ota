@@ -310,7 +310,7 @@ if (-Not $per.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) 
   }
 
   LogToConsole 4 "Downloading realme-ota..."
-  Invoke-WebRequest -Uri https://github.com/R0rt1z2/realme-ota/archive/refs/heads/master.zip -OutFile dist.zip
+  Invoke-WebRequest -Uri https://github.com/IrinX/realme-ota/archive/refs/heads/master.zip -OutFile dist.zip
 
   
 

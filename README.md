@@ -2,7 +2,7 @@
 
 Fork of [R0rt1z2/realme-ota](https://github.com/R0rt1z2/realme-ota) with added support for **ColorOS 1~16** and **OnePlus (OxygenOS / HydrogenOS)**, keeping backwards compatibility with RealmeUI 1~7.
 
-![License](https://img.shields.io/github/license/R0rt1z2/realme-ota)
+![License](https://img.shields.io/github/license/IrinX/realme-ota)
 
 ## Requirements
 * Python 3.9 (or newer).
@@ -13,13 +13,13 @@ Fork of [R0rt1z2/realme-ota](https://github.com/R0rt1z2/realme-ota) with added s
 Required [Windows Terminal](https://github.com/microsoft/terminal) or [PowerShell](https://github.com/PowerShell/PowerShell).
 ```powershell
 # (Requires privileges - start Terminal/PowerShell as administrator)
-Invoke-WebRequest https://raw.githubusercontent.com/R0rt1z2/realme-ota/master/Install.ps1 | Invoke-Expression
+Invoke-WebRequest https://raw.githubusercontent.com/IrinX/realme-ota/master/Install.ps1 | Invoke-Expression
 ```
 
 ### Linux
 ```bash
 sudo apt install python3-pip
-pip3 install --upgrade git+https://github.com/R0rt1z2/realme-ota
+pip3 install --upgrade git+https://github.com/IrinX/realme-ota
 ```
 
 ## Usage
