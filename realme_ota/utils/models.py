@@ -10,7 +10,8 @@ import os
 import re
 import json
 import tempfile
-import urllib.request
+
+import requests
 
 # Google official source
 GOOGLE_DEVICES_URL = 'https://storage.googleapis.com/play_public/supported_devices.html'
@@ -31,11 +32,24 @@ def _fetch_and_parse():
     Returns a list of dicts:
         [{'brand':..., 'name':..., 'device':..., 'model':...}, ...]
     """
-    req = urllib.request.Request(
-        GOOGLE_DEVICES_URL,
-        headers={'User-Agent': 'Mozilla/5.0 (realme-ota)'}
-    )
-    html = urllib.request.urlopen(req, timeout=30).read().decode('utf-8', errors='replace')
+    last_err = None
+    for attempt in range(3):
+        try:
+            resp = requests.get(
+                GOOGLE_DEVICES_URL,
+                headers={'User-Agent': 'Mozilla/5.0 (realme-ota)'},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            html = resp.text
+            break
+        except Exception as e:
+            last_err = e
+            if attempt < 2:
+                import time as _t
+                _t.sleep(2 * (attempt + 1))
+    else:
+        raise RuntimeError(f'Failed to fetch device list after 3 attempts: {last_err}')
 
     # Each row: <tr><td>brand</td><td>name</td><td>device</td><td>model</td></tr>
     row_re = re.compile(

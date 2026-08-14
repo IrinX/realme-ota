@@ -78,6 +78,7 @@ def main():
             results = search_devices(query, force_refresh=args.refresh_cache)
         except Exception as e:
             print(f"Error fetching device list: {e}", file=sys.stderr)
+            print(f"Tip: Set ALL_PROXY=http://your-proxy:port if your network blocks Google APIs.", file=sys.stderr)
             sys.exit(1)
         if not results:
             print(f"No devices found matching '{query}'." if query else "No devices found.")
