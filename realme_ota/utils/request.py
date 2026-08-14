@@ -125,17 +125,15 @@ class Request:
             RUI 7 = Android 16, ColorOS 16
 
         ColorOS 1..16 :
-            ColorOS 1..6 -> Android 10.0 (pre-Android 10 era, clamped so server doesn't choke)
+            ColorOS 1..6  -> Android 10.0 (pre-Android 10 era, clamped)
             ColorOS 7    -> Android 10.0
-            ColorOS 8    -> Android 11.0
-            ColorOS 9    -> Android 12.0
-            ColorOS 10   -> Android 13.0
-            ColorOS 11   -> Android 14.0
-            ColorOS 12   -> Android 15.0
-            ColorOS 13   -> Android 16.0
-            ColorOS 14   -> Android 17.0   (future, for "query history up to ColorOS 16")
-            ColorOS 15   -> Android 18.0
-            ColorOS 16   -> Android 19.0
+            ColorOS 8~10  -> Android 10.0 (these versions were skipped by OPPO)
+            ColorOS 11   -> Android 11.0
+            ColorOS 12   -> Android 12.0
+            ColorOS 13   -> Android 13.0
+            ColorOS 14   -> Android 14.0
+            ColorOS 15   -> Android 15.0
+            ColorOS 16   -> Android 16.0
 
         OnePlus OxygenOS / HydrogenOS modern builds share the same ColorOS
         versioning scheme, so os_version is treated as the ColorOS version.
@@ -150,8 +148,10 @@ class Request:
                 cos = 11 + (os_version - 2)   # i.e. os_version + 9
         else:
             # coloros / oneplus
+            # ColorOS 7 -> Android 10; ColorOS 8~10 were skipped by OPPO;
+            # ColorOS 11+ maps 1:1 to Android version (ColorOS 11 -> Android 11, etc.)
             cos = os_version
-            android = 10 + max(0, os_version - 7)
+            android = max(10, os_version)
 
         # Safety clamp for ColorOS 1..6 (they were based on Android 5~9 but
         # the modern component-OTA server rarely cares; 10 is the safe floor).

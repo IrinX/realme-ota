@@ -19,7 +19,9 @@
 import os
 import sys
 import json
+import time
 import requests
+import string
 
 from argparse import ArgumentParser
 
@@ -57,6 +59,7 @@ def main():
     req_opts.add_argument("-b", "--beta", action='store_true', help="Try to get a test version (IMEI probably required).")
     req_opts.add_argument("-l", "--language", type=str, default=None, help="Specify the language of response (en-EN by default, zh-CN in China).")
     req_opts.add_argument("--old-method", action='store_true', help="Use old method for the request (only applies if os_version >= 2 / equivalent legacy).")
+    req_opts.add_argument("--scan", action='store_true', help="Auto-scan common OTA version patterns (tries letters A-G, numbers 00-05, builds 0001/0010). Useful when you don't know the exact ro.build.version.ota.")
     # Output settings
     out_opts = parser.add_argument_group("output options")
     out_opts.add_argument("-d", "--dump", type=str, help="Save request response into a file.")
@@ -93,8 +96,8 @@ def main():
     # ---- Validate required positional args (when not using --list-models) ----
     missing = []
     if not args.product_model: missing.append('product_model')
-    if not args.ota_version:   missing.append('ota_version')
     if args.os_version is None: missing.append('os_version')
+    if not args.scan and not args.ota_version: missing.append('ota_version')
     if missing:
         parser.error(f"the following arguments are required: {', '.join(missing)}")
 
@@ -107,12 +110,10 @@ def main():
     if brand == "auto":
         try:
             brand = detect_brand_from_model(args.product_model, force_refresh=args.refresh_cache)
-            # Also try to log the device's marketing name
             info = lookup_model(args.product_model, force_refresh=args.refresh_cache)
             if info:
                 logger.log(f"Device identified: {info['model']} = {info['name']} (brand={brand})", 4)
         except Exception:
-            # Network/parse failure: fall back to prefix heuristics
             m = (args.product_model or "").upper()
             if m.startswith("RMX"):
                 brand = "realme"
@@ -136,82 +137,119 @@ def main():
 
     req_version = 1 if (args.old_method or legacy_era) else 2
 
-    request = Request(
-        req_version = req_version,
-        model = args.product_model,
-        ota_version = args.ota_version,
-        os_version = args.os_version,
-        brand = brand,
-        nv_identifier = args.nv_identifier,
-        region = args.region,
-        deviceId = args.guid,
-        imei0 = args.imei[0] if args.imei and len(args.imei) > 0 else None,
-        imei1 = args.imei[1] if args.imei and len(args.imei) > 1 else None,
-        beta = args.beta,
-        language=args.language
-    )
+    def _try_request(ota_ver):
+        """Send a single OTA request. Returns (True, content) or (False, err_msg)."""
+        request = Request(
+            req_version=req_version,
+            model=args.product_model,
+            ota_version=ota_ver,
+            os_version=args.os_version,
+            brand=brand,
+            nv_identifier=args.nv_identifier,
+            region=args.region,
+            deviceId=args.guid,
+            imei0=args.imei[0] if args.imei and len(args.imei) > 0 else None,
+            imei1=args.imei[1] if args.imei and len(args.imei) > 1 else None,
+            beta=args.beta,
+            language=args.language
+        )
+        try:
+            request.set_vars()
+            request.set_body_headers()
+        except Exception as e:
+            return False, str(e)
 
-    logger.log(f"Load payload for {args.product_model} ({os_label}, brand={brand})")
-    try:
-        request.set_vars()
-        req_body, req_hdrs, plain_body = request.set_body_headers()
-    except Exception as e:
-        logger.die(f"Something went wrong while setting the request variables :( ({e})!", 2)
+        logger.log(f"Request headers:\n{json.dumps(request.headers, indent=4, sort_keys=True, ensure_ascii=False)}", 5)
 
-    logger.log(f"Request headers:\n{json.dumps(req_hdrs, indent=4, sort_keys=True, ensure_ascii=False)}", 5)
-    logger.log(f"Request body:\n{json.dumps(plain_body, indent=4, sort_keys=True, ensure_ascii=False)}", 5)
-    logger.log(f"Encrypted body:\n{json.dumps(req_body, indent=4, sort_keys=True, ensure_ascii=False)}", 5)
+        try:
+            response = requests.post(request.url, data=request.body, headers=request.headers, timeout=30)
+        except Exception as e:
+            return False, str(e)
 
-    logger.log("Wait for the endpoint to reply")
-    try:
-        response = requests.post(request.url, data = request.body, headers = request.headers, timeout = 30)
-    except Exception as e:
-        logger.die(f"Something went wrong while requesting to the endpoint :( {e}!", 1)
+        try:
+            request.validate_response(response)
+        except Exception as e:
+            if response.content:
+                try:
+                    json_response = json.loads(response.content)
+                    logger.log(f"Response:\n{json.dumps(json_response, indent=4, sort_keys=True, ensure_ascii=False)}", 5)
+                except Exception:
+                    pass
+            return False, str(e)
 
-    try:
-        request.validate_response(response)
-    except Exception as e:
-        if response.content:
+        try:
             json_response = json.loads(response.content)
-            logger.log(f"Response:\n{json.dumps(json_response, indent=4, sort_keys=True, ensure_ascii=False)}", 5)
-        if args.ota_version[-17:] != '0001_000000000001':
-            sys.argv[sys.argv.index(args.ota_version)] = args.ota_version[:-17] + '0001_000000000001'
-            os.execl(sys.executable, sys.executable, *sys.argv)
-        logger.die(f'{e}', 1)
-    else:
-        logger.log("All good")
-
-    logger.log("Let's rock")
-    try:
-        json_response = json.loads(response.content)
-        logger.log(f"Response:\n{json.dumps(json_response, indent=4, sort_keys=True, ensure_ascii=False)}", 5)
-        content = json.loads(request.decrypt(json_response[request.resp_key]))
-    except Exception as e:
-        logger.die(f"Something went wrong while parsing the response :( {e}!", 2)
-
-    try:
-        request.validate_content(content)
-    except Exception as e:
-        logger.die(f'{e}', 1)
-    else:
-        logger.log("Party time")
-
-    if args.only:
-        try:
-            content = content[args.only]
+            content = json.loads(request.decrypt(json_response[request.resp_key]))
+            request.validate_content(content)
         except Exception as e:
-            logger.die(f"Invalid response key: {args.only}!", 2)
+            return False, str(e)
 
-    if args.dump:
-        try:
-            with open(args.dump, "w") as fp:
-                json.dump(content, fp, sort_keys=True, indent=4, ensure_ascii=False)
-        except Exception as e:
-            logger.die(f"Something went wrong while writing the response to {args.dump} {e}!", 1)
+        return True, content
+
+    def _output(content):
+        """Handle --only and --dump output."""
+        if args.only:
+            try:
+                content = content[args.only]
+            except Exception:
+                logger.die(f"Invalid response key: {args.only}!", 2)
+        if args.dump:
+            try:
+                with open(args.dump, "w") as fp:
+                    json.dump(content, fp, sort_keys=True, indent=4, ensure_ascii=False)
+            except Exception as e:
+                logger.die(f"Something went wrong while writing the response to {args.dump} {e}!", 1)
+            else:
+                logger.log(f"Successfully saved request as {args.dump}!")
         else:
-            logger.log(f"Successfully saved request as {args.dump}!")
-    else:
-        print(f"{json.dumps(content, indent=4, sort_keys=True, ensure_ascii=False)}")
+            print(f"{json.dumps(content, indent=4, sort_keys=True, ensure_ascii=False)}")
+
+    # ---- Scan mode: try common OTA version patterns ----
+    if args.scan:
+        model = args.product_model
+        letters = list(string.ascii_uppercase[:7])  # A-G
+        nums = ['00', '01', '02', '03', '04', '05']
+        builds = ['0001', '0010']
+        candidates = []
+        for letter in letters:
+            for num in nums:
+                for build in builds:
+                    candidates.append(f"{model}_11.{letter}.{num}_{build}_000000000001")
+
+        logger.log(f"Scanning {len(candidates)} OTA version patterns for {model} ({os_label}, brand={brand})")
+        found = False
+        for i, ota_ver in enumerate(candidates):
+            logger.log(f"[{i+1}/{len(candidates)}] Trying {ota_ver} ...")
+            ok, result = _try_request(ota_ver)
+            if ok:
+                logger.log(f"Found valid OTA: {ota_ver}")
+                logger.log("Party time")
+                _output(result)
+                found = True
+                break
+            else:
+                logger.log(f"  -> {result}", 3)
+            time.sleep(0.3)
+        if not found:
+            logger.die(f"No valid OTA version found after scanning {len(candidates)} patterns. "
+                       f"Please provide the exact ro.build.version.ota from the device.", 1)
+        sys.exit(0)
+
+    # ---- Normal mode: single request ----
+    logger.log(f"Load payload for {args.product_model} ({os_label}, brand={brand})")
+    ok, result = _try_request(args.ota_version)
+    if not ok:
+        # Auto-downgrade: retry with suffix 0001_000000000001
+        if args.ota_version[-17:] != '0001_000000000001':
+            new_ver = args.ota_version[:-17] + '0001_000000000001'
+            logger.log(f"Retrying with downgraded version: {new_ver}")
+            ok, result = _try_request(new_ver)
+        if not ok:
+            logger.die(f'{result}', 1)
+
+    logger.log("All good")
+    logger.log("Party time")
+    _output(result)
 
 if __name__ == '__main__':
     main()
